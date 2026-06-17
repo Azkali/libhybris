@@ -17,6 +17,8 @@
 
 #include "config.h"
 
+#include <android-config.h>
+
 /* EGL function pointers */
 #define EGL_EGLEXT_PROTOTYPES
 #include <EGL/egl.h>
@@ -49,6 +51,7 @@ static int _egl_context_client_version = 1;
 static EGLint      (*_eglGetError)(void) = NULL;
 
 static EGLDisplay  (*_eglGetDisplay)(EGLNativeDisplayType display_id) = NULL;
+static EGLBoolean  (*_eglInitialize)(EGLDisplay dpy, EGLint *major, EGLint *minor) = NULL;
 static EGLBoolean  (*_eglTerminate)(EGLDisplay dpy) = NULL;
 
 static const char *  (*_eglQueryString)(EGLDisplay dpy, EGLint name) = NULL;
@@ -171,6 +174,19 @@ struct _EGLDisplay *hybris_egl_display_get_mapping(EGLDisplay display)
 	return EGL_NO_DISPLAY;
 }
 
+void hybris_egl_display_release_mappings(void)
+{
+	int i;
+	for (i = 0; i < _EGL_MAX_DISPLAYS; i++)
+	{
+		if (_displayMappings[i])
+		{
+			ws_releaseDisplay(_displayMappings[i]);
+			_displayMappings[i] = NULL;
+		}
+	}
+}
+
 static const char * _defaultEglPlatform()
 {
 	char *egl_platform;
@@ -271,7 +287,16 @@ EGLDisplay eglGetPlatformDisplay(EGLenum platform,
 	return __eglHybrisGetPlatformDisplayCommon(platform, display_id, attrib_list);
 }
 
-HYBRIS_IMPLEMENT_FUNCTION3(egl, EGLBoolean, eglInitialize, EGLDisplay, EGLint *, EGLint *);
+EGLBoolean eglInitialize(EGLDisplay dpy, EGLint *major, EGLint *minor)
+{
+	HYBRIS_DLSYSM(egl, &_eglInitialize, "eglInitialize");
+	EGLBoolean ret = _eglInitialize(dpy, major, minor);
+	if (ret) {
+		struct _EGLDisplay *display = hybris_egl_display_get_mapping(dpy);
+		ws_eglInitialized(display);
+	}
+	return ret;
+}
 
 EGLBoolean eglTerminate(EGLDisplay dpy)
 {
@@ -311,9 +336,16 @@ EGLSurface eglCreateWindowSurface(EGLDisplay dpy, EGLConfig config,
 
 	if (result != EGL_NO_SURFACE)
 		egl_helper_push_mapping(result, win);
+	else
+		ws_DestroyWindow(win);
 
 	HYBRIS_TRACE_END("hybris-egl", "eglCreateWindowSurface", "");
 	return result;
+}
+EGLSurface eglCreatePlatformWindowSurface(EGLDisplay dpy, EGLConfig config,
+		void *native_window, const EGLAttrib *attrib_list)
+{
+	return eglCreateWindowSurface(dpy, config, (uintptr_t) native_window, (const EGLint *) attrib_list);
 }
 
 static EGLSurface _my_eglCreatePlatformWindowSurfaceEXT(EGLDisplay dpy, EGLConfig config,
@@ -443,6 +475,7 @@ HYBRIS_IMPLEMENT_FUNCTION3(egl, EGLBoolean, eglCopyBuffers, EGLDisplay, EGLSurfa
 static EGLImageKHR _my_eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum target, EGLClientBuffer buffer, const EGLint *attrib_list)
 {
 	HYBRIS_DLSYSM(egl, &_eglCreateImageKHR, "eglCreateImageKHR");
+	struct _EGLDisplay *display = hybris_egl_display_get_mapping(dpy);
 	EGLContext newctx = ctx;
 	EGLenum newtarget = target;
 	EGLClientBuffer newbuffer = buffer;
@@ -459,8 +492,9 @@ static EGLImageKHR _my_eglCreateImageKHR(EGLDisplay dpy, EGLContext ctx, EGLenum
 	struct egl_image *image;
 	image = malloc(sizeof *image);
 	image->egl_image = eik;
-	image->egl_buffer = buffer;
 	image->target = target;
+	image->ws_dpy = display;
+	image->ws_buffer = newbuffer;
 
 	return (EGLImageKHR)image;
 }
@@ -501,8 +535,10 @@ static struct FuncNamePair _eglHybrisOverrideFunctions[] = {
 	OVERRIDE_SAMENAME(eglGetError),
 	OVERRIDE_SAMENAME(eglGetDisplay),
 	OVERRIDE_SAMENAME(eglGetPlatformDisplay),
+	OVERRIDE_SAMENAME(eglInitialize),
 	OVERRIDE_SAMENAME(eglTerminate),
 	OVERRIDE_SAMENAME(eglCreateWindowSurface),
+	OVERRIDE_SAMENAME(eglCreatePlatformWindowSurface),
 	OVERRIDE_SAMENAME(eglDestroySurface),
 	OVERRIDE_SAMENAME(eglSwapInterval),
 	OVERRIDE_SAMENAME(eglCreateContext),

@@ -2072,7 +2072,7 @@ static int _hybris_hook_scandirat(int fd, const char *dir,
             result[nItems++] = filter_r;
         }
         if (nItems && compar != NULL) // sort
-            qsort(result, nItems, sizeof(struct bionic_dirent *), compar);
+            qsort(result, nItems, sizeof(struct bionic_dirent *), (int (*)(const void *, const void *)) compar);
 
         *namelist = result;
     }
@@ -2873,6 +2873,12 @@ void _hybris_hook_free(void *ptr)
 #define cfree free
 #endif
 
+int _hybris_hook_android_fdsan_set_error_level(int new_level)
+{
+    TRACE_HOOK("new_level %d", new_level);
+    return new_level;
+}
+
 void _hybris_hook_android_fdsan_exchange_owner_tag(int fd, uint64_t expected_tag, uint64_t new_tag)
 {
     (void)expected_tag;
@@ -2933,6 +2939,8 @@ static struct _hook hooks_common[] = {
     // HOOK_DIRECT(memswap),
     HOOK_DIRECT_NO_DEBUG(index),
     HOOK_DIRECT_NO_DEBUG(rindex),
+    HOOK_DIRECT_NO_DEBUG(stpcpy),
+    HOOK_DIRECT_NO_DEBUG(stpncpy),
     HOOK_DIRECT_NO_DEBUG(strchr),
     HOOK_DIRECT_NO_DEBUG(strrchr),
     HOOK_INDIRECT(strlen),
@@ -2994,6 +3002,8 @@ static struct _hook hooks_common[] = {
     HOOK_DIRECT_NO_DEBUG(pthread_mutexattr_gettype),
     HOOK_DIRECT_NO_DEBUG(pthread_mutexattr_settype),
     HOOK_DIRECT_NO_DEBUG(pthread_mutexattr_getpshared),
+    HOOK_DIRECT_NO_DEBUG(pthread_mutexattr_getprotocol),
+    HOOK_DIRECT_NO_DEBUG(pthread_mutexattr_setprotocol),
     HOOK_DIRECT(pthread_mutexattr_setpshared),
     HOOK_DIRECT_NO_DEBUG(pthread_condattr_init),
     HOOK_DIRECT_NO_DEBUG(pthread_condattr_getpshared),
@@ -3011,6 +3021,7 @@ static struct _hook hooks_common[] = {
     HOOK_TO(pthread_cond_timedwait_monotonic_np, _hybris_hook_pthread_cond_timedwait),
     HOOK_INDIRECT(pthread_cond_timedwait_relative_np),
     HOOK_DIRECT_NO_DEBUG(pthread_key_delete),
+    HOOK_DIRECT_NO_DEBUG(pthread_getname_np),
     HOOK_INDIRECT(pthread_setname_np),
     HOOK_DIRECT_NO_DEBUG(pthread_once),
     HOOK_DIRECT_NO_DEBUG(pthread_key_create),
@@ -3330,8 +3341,11 @@ static struct _hook hooks_p[] = {
     HOOK_INDIRECT(fgets_unlocked),
     HOOK_INDIRECT(fputs_unlocked),
     /* fdsan.h */
+    HOOK_INDIRECT(android_fdsan_set_error_level),
     HOOK_INDIRECT(android_fdsan_exchange_owner_tag),
     HOOK_INDIRECT(android_fdsan_close_with_tag),
+    /* pthread.h */
+    HOOK_DIRECT_NO_DEBUG(pthread_setschedprio),
 };
 
 static int hook_cmp(const void *a, const void *b)

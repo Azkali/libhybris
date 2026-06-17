@@ -17,12 +17,15 @@
 #include <dlfcn.h>
 #include <stddef.h>
 
-#include <android-version.h>
+#include <android-config.h>
+
+#if ANDROID_VERSION_MAJOR>=10
 #include <android/rect.h>
 #include <cutils/native_handle.h>
+#endif
 
 #include <hybris/common/binding.h>
-#include <hybris/ui/ui_compatibility_layer.h>
+#include <hybris/ui/ui.h>
 
 #define COMPAT_LIBRARY_PATH		"libui_compat_layer.so"
 

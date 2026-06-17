@@ -19,6 +19,7 @@ AM_CXXFLAGS = \
 
 q_la_SOURCES = \
 	hybris_compat.cpp \
+	bionic/libc/bionic/bionic_call_ifunc_resolver.cpp \
 	dlfcn.cpp \
 	linker_allocator.cpp \
 	linker_block_allocator.cpp \
@@ -40,7 +41,15 @@ q_la_SOURCES = \
 	linker_utils.cpp \
 	rt.cpp \
 	../strlcpy.c \
-	../strlcat.c
+	../strlcat.c \
+	bionic/libc/bionic/bionic_elf_tls.cpp \
+	bionic/libc/bionic/bionic_allocator.cpp
+
+if WANT_ARCH_ARM64
+q_la_SOURCES += \
+	tlsdesc_resolver.S
+endif
+
 q_la_CPPFLAGS = \
 	$(AM_CPPFLAGS) \
 	-I$(top_srcdir)/include \
@@ -51,7 +60,13 @@ q_la_CPPFLAGS = \
 	-D_USING_LIBCXX \
 	$(ARCH_FLAGS) \
 	$(ANDROID_HEADERS_CFLAGS)
+
+if HAS_ANDROID_11_0_0
+q_la_CPPFLAGS += -DHAS_ANDROID_11_0_0
+endif
+
 q_la_LDFLAGS = \
+	-lpthread \
 	-lsupc++ \
 	-module \
 	-avoid-version
@@ -68,4 +83,3 @@ if WANT_ARM_TRACING
 q_la_CPPFLAGS += \
 	-DWANT_ARM_TRACING
 endif
-

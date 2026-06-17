@@ -956,25 +956,55 @@ soinfo::soinfo(android_namespace_t* ns, const char* realpath,
                const struct stat* file_stat, off64_t file_offset,
                int rtld_flags) {
 
+  soname_ = nullptr;
   if (realpath != nullptr) {
     realpath_ = realpath;
   }
 
   flags_ = FLAG_NEW_SOINFO;
   version_ = SOINFO_VERSION;
+  handle_ = 0;
 
   if (file_stat != nullptr) {
     this->st_dev_ = file_stat->st_dev;
     this->st_ino_ = file_stat->st_ino;
     this->file_offset_ = file_offset;
+  } else {
+    st_dev_ = 0;
+    st_ino_ = 0;
+    file_offset_ = 0;
   }
 
   this->rtld_flags_ = rtld_flags;
   this->primary_namespace_ = ns;
+
+  dt_flags_1_ = 0;
+  strtab_size_ = 0;
+
+  gnu_nbucket_ = 0;
+  gnu_bucket_ = nullptr;
+  gnu_chain_ = nullptr;
+  gnu_maskwords_ = 0;
+  gnu_shift2_ = 0;
+
+  local_group_root_ = nullptr;
+
+  android_relocs_ = nullptr;
+  android_relocs_size_ = 0;
+
+  versym_ = nullptr;
+  verdef_ptr_ = 0;
+  verdef_cnt_ = 0;
+  verneed_ptr_ = 0;
+  verneed_cnt_ = 0;
+
+  target_sdk_version_ = 0;
 }
 
 soinfo::~soinfo() {
-  g_soinfo_handles_map.erase(handle_);
+  if (handle_) {
+    g_soinfo_handles_map.erase(handle_);
+  }
 }
 
 static uint32_t calculate_elf_hash(const char* name) {
@@ -4446,12 +4476,28 @@ extern "C" int __system_properties_init(void);
 static const char* get_executable_path() {
   static std::string executable_path;
   if (executable_path.empty()) {
+#ifdef DISABLED_FOR_HYBRIS_SUPPORT
     char path[PATH_MAX];
     ssize_t path_len = readlink("/proc/self/exe", path, sizeof(path));
     if (path_len == -1 || path_len >= static_cast<ssize_t>(sizeof(path))) {
       __libc_fatal("readlink('/proc/self/exe') failed: %s", strerror(errno));
     }
     executable_path = std::string(path, path_len);
+#else
+    if (!getauxval(AT_SECURE)) {
+      const char* use_vendor_namespace = getenv("HYBRIS_USE_VENDOR_NAMESPACE");
+      if (use_vendor_namespace != nullptr) {
+        executable_path = "/vendor/bin/yes";
+      }
+    }
+    if (executable_path.empty()) {
+#if defined(__aarch64__) || defined(__x86_64__)
+      executable_path = "/system/bin/app_process64";
+#else
+      executable_path = "/system/bin/app_process32";
+#endif
+    }
+#endif
   }
 
   return executable_path.c_str();

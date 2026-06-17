@@ -57,7 +57,7 @@ extern "C" {
 
     int graphic_buffer_init_check(struct graphic_buffer *buffer);
 
-//#if ANDROID_VERSION_MAJOR>=10
+#if ANDROID_VERSION_MAJOR>=10
     typedef int32_t status_t;
     typedef int32_t PixelFormat;
 
@@ -80,7 +80,7 @@ extern "C" {
                                         void** vaddr, int32_t* outBytesPerPixel,
                                         int32_t* outBytesPerStride);
     status_t graphic_buffer_mapper_unlock(buffer_handle_t handle);
-//#endif
+#endif
 
 #ifdef __cplusplus
 }

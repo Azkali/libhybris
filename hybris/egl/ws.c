@@ -24,10 +24,14 @@
 #include <pthread.h>
 #include <string.h>
 
+#include "eglhybris.h"
+
 pthread_mutex_t mutex = PTHREAD_MUTEX_INITIALIZER;
 
 static struct ws_module *ws = NULL;
+static void* wsmod = NULL;
 static char ws_name[32] = { 0 };
+static int ws_init_count = 0;
 
 static EGLBoolean ensureCorrectWs(const char * egl_platform)
 {
@@ -46,10 +50,24 @@ static EGLBoolean ensureCorrectWs(const char * egl_platform)
  */
 EGLBoolean ws_init(const char * egl_platform)
 {
-	if (ws != NULL)
-		return ensureCorrectWs(egl_platform);
-
 	pthread_mutex_lock(&mutex);
+
+	// We can't unload the ws in eglTerminate since it is allowed to call
+	// eglInitialize again after an eglTerminate with the same display.
+	// So we unload the ws here only if it a different one is requested and
+	// there are no users of the previous one anymore.
+	if (ws_init_count == 0 && ws != NULL) {
+		if (!ensureCorrectWs(egl_platform)) {
+			hybris_egl_display_release_mappings();
+
+			if (wsmod != NULL) {
+				dlclose(wsmod);
+				wsmod = NULL;
+			}
+			ws = NULL;
+		}
+	}
+
 	if (ws != NULL) {
 		pthread_mutex_unlock(&mutex);
 		return ensureCorrectWs(egl_platform);
@@ -66,7 +84,7 @@ EGLBoolean ws_init(const char * egl_platform)
 
 	snprintf(ws_lib_path, 2048, "%s/eglplatform_%s.so", eglplatform_dir, egl_platform);
 
-	void *wsmod = (void *) dlopen(ws_lib_path, RTLD_LAZY);
+	wsmod = (void *) dlopen(ws_lib_path, RTLD_LAZY);
 	if (wsmod==NULL)
 	{
 		fprintf(stderr, "ERROR: %s\n\t%s\n", ws_lib_path, dlerror());
@@ -90,10 +108,34 @@ struct _EGLDisplay *ws_GetDisplay(EGLNativeDisplayType display)
 	return ws->GetDisplay(display);
 }
 
+void ws_eglInitialized(struct _EGLDisplay *dpy)
+{
+	pthread_mutex_lock(&mutex);
+	ws_init_count++;
+	if (ws->eglInitialized) {
+		ws->eglInitialized(dpy);
+	}
+	pthread_mutex_unlock(&mutex);
+}
+
 void ws_Terminate(struct _EGLDisplay *dpy)
 {
+	pthread_mutex_lock(&mutex);
+	if (ws_init_count > 0) {
+		if (ws->Terminate) {
+			ws->Terminate(dpy);
+		}
+		ws_init_count--;
+	}
+	pthread_mutex_unlock(&mutex);
+}
+
+void ws_releaseDisplay(struct _EGLDisplay *dpy)
+{
 	assert(ws != NULL);
-	ws->Terminate(dpy);
+	if (ws->releaseDisplay) {
+		ws->releaseDisplay(dpy);
+	}
 }
 
 EGLNativeWindowType ws_CreateWindow(EGLNativeWindowType win, struct _EGLDisplay *display)

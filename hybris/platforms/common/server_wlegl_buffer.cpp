@@ -42,6 +42,8 @@ static const struct wl_buffer_interface server_wlegl_buffer_impl = {
 server_wlegl_buffer *
 server_wlegl_buffer_from(struct wl_resource *buffer)
 {
+	if (!buffer || !wl_resource_instance_of(buffer, &wl_buffer_interface, &server_wlegl_buffer_impl))
+		return NULL;
 	return static_cast<server_wlegl_buffer *>(wl_resource_get_user_data(buffer));
 }
 
@@ -60,7 +62,7 @@ server_wlegl_buffer_create(wl_client *client,
 			   int32_t height,
 			   int32_t stride,
 			   int32_t format,
-			   int32_t usage,
+			   int64_t usage,
 			   buffer_handle_t handle,
 			   server_wlegl *wlegl)
 {
@@ -71,14 +73,15 @@ server_wlegl_buffer_create(wl_client *client,
 	buffer->resource = wl_resource_create(client, &wl_buffer_interface, 1, id);
 	wl_resource_set_implementation(buffer->resource, &server_wlegl_buffer_impl, buffer, server_wlegl_buffer_dtor);
 
-	ret = hybris_gralloc_retain(handle);
+	const native_handle_t* out_handle = NULL;
+	ret = hybris_gralloc_import_buffer(handle, &out_handle);
 	if (ret) {
 		delete buffer;
 		return NULL;
 	}
 
 	buffer->buf = new RemoteWindowBuffer(
-	        width, height, stride, format, usage, handle);
+	        width, height, stride, format, usage, out_handle);
 	buffer->buf->common.incRef(&buffer->buf->common);
 	return buffer;
 }
@@ -89,7 +92,7 @@ server_wlegl_buffer_create_server(wl_client *client,
 			   int32_t height,
 			   int32_t stride,
 			   int32_t format,
-			   int32_t usage,
+			   int64_t usage,
 			   buffer_handle_t handle,
 			   server_wlegl *wlegl)
 {

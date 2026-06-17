@@ -108,14 +108,17 @@ public:
     virtual status_t setNextOutputFile(int fd);
     virtual status_t getMetrics(Parcel* reply);
     virtual status_t setInputDevice(audio_port_handle_t deviceId);
+#if ANDROID_VERSION_MAJOR < 15
     virtual status_t getRoutedDeviceId(audio_port_handle_t* deviceId);
+#endif
     virtual status_t enableAudioDeviceCallback(bool enabled);
     virtual status_t getActiveMicrophones(
-#if ANDROID_VERSION_MAJOR>=14
-                        std::vector<media::MicrophoneInfoFw>* activeMicrophones);
+#if ANDROID_VERSION_MAJOR >= 14
+                    std::vector<media::MicrophoneInfoFw>* activeMicrophones
 #else
-                        std::vector<media::MicrophoneInfo>* activeMicrophones);
+                    std::vector<media::MicrophoneInfo>* activeMicrophones
 #endif
+    );
 #endif
 #if ANDROID_VERSION_MAJOR>=10
     virtual status_t setPreferredMicrophoneDirection(audio_microphone_direction_t direction);
@@ -126,8 +129,9 @@ public:
    virtual status_t setPrivacySensitive(bool privacySensitive);
    virtual status_t isPrivacySensitive(bool *privacySensitive) const;
 #endif
-#if ANDROID_VERSION_MAJOR>=12
-   virtual status_t getRtpDataUsage(uint64_t *bytes);
+#if ANDROID_VERSION_MAJOR>=15
+    virtual status_t getRoutedDeviceIds(DeviceIdVector& deviceIds);
+    virtual status_t getRtpDataUsage(uint64_t *bytes);
 #endif
 
 private:

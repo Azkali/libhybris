@@ -50,10 +50,24 @@ extern "C" size_t strlcat(char *dst, const char *src, size_t size);
  * Experimental support for SHT_RELR sections. For details, see proposal
  * at https://groups.google.com/forum/#!topic/generic-abi/bX460iggiKg
  */
-#define DT_RELR 0x6fffe000
-#define DT_RELRSZ 0x6fffe001
-#define DT_RELRENT 0x6fffe003
-#define DT_RELRCOUNT 0x6fffe005
+#define DT_ANDROID_RELR 0x6fffe000
+#define DT_ANDROID_RELRSZ 0x6fffe001
+#define DT_ANDROID_RELRENT 0x6fffe003
+#define DT_ANDROID_RELRCOUNT 0x6fffe005
+
+/* Defined in glibc >= 2.36, and used in bionic since apilevel 30 */
+#ifndef DT_RELRSZ
+#define DT_RELRSZ 35
+#endif
+
+#ifndef DT_RELR
+#define DT_RELR 36
+#endif
+
+#ifndef DT_RELRENT
+#define DT_RELRENT 37
+#endif
+
 /*
  * From bionic/libc/include/elf.h
  *
@@ -71,5 +85,14 @@ extern "C" size_t strlcat(char *dst, const char *src, size_t size);
 #define R_AARCH64_TLS_DTPREL64          1028    /* Module-relative offset. */
 #define R_AARCH64_TLS_DTPMOD64          1029    /* Module index. */
 #define R_AARCH64_TLS_TPREL64           1030    /* TP-relative offset. */
+
+/*
+ * From bionic/libc/include/bits/elf_arm64.h
+ *
+ * Dynamic array tags
+ */
+#define DT_AARCH64_BTI_PLT              0x70000001
+#define DT_AARCH64_PAC_PLT              0x70000003
+#define DT_AARCH64_VARIANT_PCS          0x70000005
 
 #endif

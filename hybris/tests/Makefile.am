@@ -20,8 +20,11 @@ bin_PROGRAMS = \
 
 if WANT_WAYLAND
 bin_PROGRAMS += \
-	test_vulkan \
 	test_camera
+if HAS_VULKAN_HEADERS
+bin_PROGRAMS += \
+	test_vulkan
+endif
 endif
 
 test_dlopen_SOURCES = test_dlopen.c
@@ -109,6 +112,7 @@ test_glesv2_LDADD = \
 	-lm \
 	$(top_builddir)/common/libhybris-common.la \
 	$(top_builddir)/egl/platforms/hwcomposer/libhybris-hwcomposerwindow.la \
+	$(top_builddir)/platforms/common/libhybris-platformcommon.la \
 	$(top_builddir)/egl/platforms/common/libhybris-eglplatformcommon.la \
 	$(libegl) \
 	$(libglesv2) \
@@ -142,6 +146,7 @@ test_glesv3_LDADD = \
 	-lm \
 	$(top_builddir)/common/libhybris-common.la \
 	$(top_builddir)/egl/platforms/hwcomposer/libhybris-hwcomposerwindow.la \
+	$(top_builddir)/platforms/common/libhybris-platformcommon.la \
 	$(top_builddir)/egl/platforms/common/libhybris-eglplatformcommon.la \
 	$(libegl) \
 	$(libglesv2) \
@@ -174,6 +179,7 @@ endif
 test_hwcomposer_LDADD = \
 	-lm \
 	$(top_builddir)/common/libhybris-common.la \
+	$(top_builddir)/platforms/common/libhybris-platformcommon.la \
 	$(top_builddir)/egl/platforms/common/libhybris-eglplatformcommon.la \
 	$(libegl) \
 	$(libglesv2) \

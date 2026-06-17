@@ -416,7 +416,6 @@ a::status_t a::MediaRecorder::setVideoFrameRate(int frames_per_second)
 
 a::status_t a::MediaRecorder::setParameters(const String8& params) {
     ALOGV("setParameters(%s)", params.c_str());
-
     if (mMediaRecorder == NULL) {
         ALOGE("media recorder is not initialized yet");
         return INVALID_OPERATION;

@@ -22,63 +22,55 @@
 #include <cutils/properties.h>
 
 #include "HWC2.h"
-#include "ComposerHal.h"
 #include "hwc2_compatibility_layer.h"
-
-using namespace android;
-
-namespace hal = android::hardware::graphics::composer::hal;
 
 class HWComposerCallback : public HWC2::ComposerCallback
 {
 public:
-    HWComposerCallback(HWC2EventListener* listener) :
-        listener(listener) { }
+    HWComposerCallback(HWC2EventListener* listener);
 
-#if ANDROID_VERSION_MAJOR < 14
-    void onComposerHalHotplug(hal::HWDisplayId display, hal::Connection connection) {
-        listener->on_hotplug_received(listener, 0, display,
-                                    connection == hal::Connection::CONNECTED,
-                                    true);
-    }
-#else
-    void onComposerHalHotplugEvent(hal::HWDisplayId display, HWC2::DisplayHotplugEvent event) {
-        listener->on_hotplug_received(listener, 0, display,
-                                    event == HWC2::DisplayHotplugEvent::CONNECTED,
-                                    true);
-    }
-#endif
-
-    void onComposerHalRefresh(hal::HWDisplayId display) {
-        listener->on_refresh_received(listener, 0, display);
-    }
-
-    void onComposerHalVsync(hal::HWDisplayId display, int64_t timestamp,
-                            uint32_t /*vsyncPeriodNanos*/) {
-        listener->on_vsync_received(listener, 0, display, timestamp);
-    }
-
-#if ANDROID_VERSION_MAJOR >= 11
-    void onComposerHalVsyncPeriodTimingChanged(hal::HWDisplayId,
-                                               const hal::VsyncPeriodChangeTimeline&) { }
-    void onComposerHalSeamlessPossible(hal::HWDisplayId) { }
-#endif
-#if ANDROID_VERSION_MAJOR >= 13
-    void onComposerHalVsyncIdle(hal::HWDisplayId) { }
-#endif
-#if ANDROID_VERSION_MAJOR >= 14
-    void onRefreshRateChangedDebug(const HWC2::RefreshRateChangedDebugData&) override { }
-#endif
-
-    virtual ~HWComposerCallback() { };
+    void onVsyncReceived(int32_t sequenceId, hwc2_display_t display,
+                        int64_t timestamp) override;
+    void onHotplugReceived(int32_t sequenceId, hwc2_display_t display,
+                        HWC2::Connection connection,
+                        bool primaryDisplay) override;
+    void onRefreshReceived(int32_t sequenceId,
+                           hwc2_display_t display) override;
 private:
     HWC2EventListener *listener;
 };
 
+HWComposerCallback::HWComposerCallback(HWC2EventListener* listener) :
+    listener(listener)
+{
+}
+
+void HWComposerCallback::onVsyncReceived(int32_t sequenceId,
+                                         hwc2_display_t display,
+                                         int64_t timestamp)
+{
+    listener->on_vsync_received(listener, sequenceId, display, timestamp);
+}
+
+void HWComposerCallback::onHotplugReceived(int32_t sequenceId,
+                                           hwc2_display_t display,
+                                           HWC2::Connection connection,
+                                           bool primaryDisplay)
+{
+    listener->on_hotplug_received(listener, sequenceId, display,
+                                  connection == HWC2::Connection::Connected,
+                                  primaryDisplay);
+}
+
+void HWComposerCallback::onRefreshReceived(int32_t sequenceId,
+                                           hwc2_display_t display)
+{
+    listener->on_refresh_received(listener, sequenceId, display);
+}
+
 struct hwc2_compat_device
 {
     HWC2::Device *self;
-    std::unique_ptr<HWComposerCallback> listener;
 };
 
 struct hwc2_compat_display
@@ -88,7 +80,7 @@ struct hwc2_compat_display
 
 struct hwc2_compat_layer
 {
-    std::shared_ptr<HWC2::Layer> self;
+    HWC2::Layer *self;
 };
 
 struct hwc2_compat_out_fences
@@ -98,17 +90,15 @@ struct hwc2_compat_out_fences
 
 hwc2_compat_device_t* hwc2_compat_device_new(bool useVrComposer)
 {
-    hwc2_compat_device_t *device = new hwc2_compat_device_t();
+    hwc2_compat_device_t *device = (hwc2_compat_device_t*) malloc(
+        sizeof(hwc2_compat_device_t));
     if (!device)
         return nullptr;
 
-    char buf[PROPERTY_VALUE_MAX] = {};
-    property_get("debug.sf.hwc_service_name", buf, "default");
-
-    device->self = new HWC2::Device(Hwc2::Composer::create(buf));
+    device->self = new HWC2::Device(useVrComposer);
 
     bool presentTimestamp =
-        !device->self->getCapabilities().count(hal::Capability::PRESENT_FENCE_IS_NOT_RELIABLE);
+        !device->self->getCapabilities().count(HWC2::Capability::PresentFenceIsNotReliable);
     property_set("service.sf.present_timestamp", presentTimestamp ? "1" : "0");
 
     return device;
@@ -116,18 +106,17 @@ hwc2_compat_device_t* hwc2_compat_device_new(bool useVrComposer)
 
 void hwc2_compat_device_register_callback(hwc2_compat_device_t *device,
                                           HWC2EventListener* listener,
-                                          int composerSequenceId /*unused*/)
+                                          int composerSequenceId)
 {
-    device->listener = std::make_unique<HWComposerCallback>(listener);
-    device->self->registerCallback(*device->listener);
+    device->self->registerCallback(new HWComposerCallback(listener),
+                                composerSequenceId);
 }
 
 void hwc2_compat_device_on_hotplug(hwc2_compat_device_t* device,
                                     hwc2_display_t displayId, bool connected)
 {
     device->self->onHotplug(displayId,
-                            connected ? hal::Connection::CONNECTED
-                                      : hal::Connection::DISCONNECTED);
+                            static_cast<HWC2::Connection>(connected));
 }
 
 hwc2_compat_display_t* hwc2_compat_device_get_display_by_id(
@@ -163,9 +152,9 @@ HWC2DisplayConfig* hwc2_compat_display_get_active_config(
 
     std::shared_ptr<const HWC2::Display::Config> activeConfig;
     auto error = display->self->getActiveConfig(&activeConfig);
-    if (error == hal::Error::BAD_CONFIG) {
+    if (error == HWC2::Error::BadConfig) {
         fprintf(stderr, "getActiveConfig: No config active, returning null");
-    } else if (error != hal::Error::NONE) {
+    } else if (error != HWC2::Error::None) {
         fprintf(stderr, "getActiveConfig failed for display %d: %s (%d)",
                 static_cast<int32_t>(display->self->getId()),
                 to_string(error).c_str(),
@@ -190,20 +179,19 @@ HWC2DisplayConfig* hwc2_compat_display_get_active_config(
 
 hwc2_error_t hwc2_compat_display_accept_changes(hwc2_compat_display_t* display)
 {
-    hal::Error error = display->self->acceptChanges();
+    HWC2::Error error = display->self->acceptChanges();
     return static_cast<hwc2_error_t>(error);
 }
 
 hwc2_compat_layer_t* hwc2_compat_display_create_layer(hwc2_compat_display_t* display)
 {
-    hwc2_compat_layer_t *layer = new hwc2_compat_layer_t();
+    hwc2_compat_layer_t *layer = (hwc2_compat_layer_t*) malloc(
+        sizeof(hwc2_compat_layer_t));
     if (!layer)
         return nullptr;
 
-    if (display->self->createLayer(&layer->self) != hal::Error::NONE) {
-        delete layer;
+    if (display->self->createLayer(&layer->self) != HWC2::Error::None)
         return nullptr;
-    }
 
     return layer;
 }
@@ -211,7 +199,10 @@ hwc2_compat_layer_t* hwc2_compat_display_create_layer(hwc2_compat_display_t* dis
 void hwc2_compat_display_destroy_layer(hwc2_compat_display_t* display,
                                        hwc2_compat_layer_t* layer)
 {
-    delete layer;
+    if (display->self->destroyLayer(layer->self) != HWC2::Error::None)
+        delete layer->self;
+
+    free(layer);
 }
 
 hwc2_error_t hwc2_compat_display_get_release_fences(hwc2_compat_display_t* display,
@@ -219,8 +210,8 @@ hwc2_error_t hwc2_compat_display_get_release_fences(hwc2_compat_display_t* displ
 {
     hwc2_compat_out_fences_t *fences = new struct hwc2_compat_out_fences;
 
-    hal::Error error = display->self->getReleaseFences(&fences->fences);
-    if (error != hal::Error::NONE) {
+    HWC2::Error error = display->self->getReleaseFences(&fences->fences);
+    if (error != HWC2::Error::None) {
         delete fences;
     } else {
         *outFences = fences;
@@ -233,7 +224,7 @@ hwc2_error_t hwc2_compat_display_present(hwc2_compat_display_t* display,
                                     int32_t* outPresentFence)
 {
     android::sp<android::Fence> presentFence;
-    hal::Error error = display->self->present(&presentFence);
+    HWC2::Error error = display->self->present(&presentFence);
 
     if (presentFence != NULL) {
         *outPresentFence = presentFence->dup();
@@ -250,21 +241,21 @@ hwc2_error_t hwc2_compat_display_set_client_target(hwc2_compat_display_t* displa
                                             const int32_t acquireFenceFd,
                                             android_dataspace_t dataspace)
 {
-    android::sp<android::GraphicBuffer> target(
-        new android::GraphicBuffer(buffer->handle,
-            android::GraphicBuffer::WRAP_HANDLE,
-            buffer->width, buffer->height,
-            buffer->format, /* layerCount */ 1,
-            buffer->usage, buffer->stride));
+    android::sp<android::GraphicBuffer> target = nullptr;
+
+    if (buffer) {
+        target = new android::GraphicBuffer(buffer->handle,
+                     android::GraphicBuffer::WRAP_HANDLE,
+                     buffer->width, buffer->height,
+                     buffer->format, /* layerCount */ 1,
+                     buffer->usage, buffer->stride);
+    }
 
     android::sp<android::Fence> acquireFence(
             new android::Fence(acquireFenceFd));
 
-    hal::Error error = display->self->setClientTarget(slot, target,
-                                        acquireFence,
-                                        /*static_cast<hal::Dataspace>(dataspace),*/
-                                        hal::Dataspace::UNKNOWN,
-                                        1.0f /* hdrSdrRatio */);
+    HWC2::Error error = display->self->setClientTarget(slot, target,
+                                        acquireFence, HAL_DATASPACE_UNKNOWN);
 
     return static_cast<hwc2_error_t>(error);
 }
@@ -272,16 +263,16 @@ hwc2_error_t hwc2_compat_display_set_client_target(hwc2_compat_display_t* displa
 hwc2_error_t hwc2_compat_display_set_power_mode(hwc2_compat_display_t* display,
                                         int mode)
 {
-    hal::Error error = display->self->setPowerMode(
-        static_cast<hal::PowerMode>(mode));
+    HWC2::Error error = display->self->setPowerMode(
+        static_cast<HWC2::PowerMode>(mode));
     return static_cast<hwc2_error_t>(error);
 }
 
 hwc2_error_t hwc2_compat_display_set_vsync_enabled(hwc2_compat_display_t* display,
                                            int enabled)
 {
-    hal::Error error = display->self->setVsyncEnabled(
-        enabled ? hal::Vsync::ENABLE : hal::Vsync::DISABLE);
+    HWC2::Error error = display->self->setVsyncEnabled(
+        static_cast<HWC2::Vsync>(enabled));
     return static_cast<hwc2_error_t>(error);
 }
 
@@ -289,9 +280,7 @@ hwc2_error_t hwc2_compat_display_validate(hwc2_compat_display_t* display,
                                  uint32_t* outNumTypes,
                                  uint32_t* outNumRequests)
 {
-    const int expectedPresentTime = 0;
-    const int frameIntervalNs = 0;
-    hal::Error error = display->self->validate(expectedPresentTime, frameIntervalNs, outNumTypes, outNumRequests);
+    HWC2::Error error = display->self->validate(outNumTypes, outNumRequests);
     return static_cast<hwc2_error_t>(error);
 }
 
@@ -310,48 +299,37 @@ hwc2_error_t hwc2_compat_layer_set_buffer(hwc2_compat_layer_t* layer,
     android::sp<android::Fence> acquireFence(
             new android::Fence(acquireFenceFd));
 
-    hal::Error error = layer->self->setBuffer(slot, target, acquireFence);
+    HWC2::Error error = layer->self->setBuffer(slot, target, acquireFence);
 
     return static_cast<hwc2_error_t>(error);
 }
 
 hwc2_error_t hwc2_compat_layer_set_blend_mode(hwc2_compat_layer_t* layer, int mode)
 {
-    hal::Error error = layer->self->setBlendMode(
-        static_cast<hal::BlendMode>(mode));
+    HWC2::Error error = layer->self->setBlendMode(
+        static_cast<HWC2::BlendMode>(mode));
     return static_cast<hwc2_error_t>(error);
 }
 
 hwc2_error_t hwc2_compat_layer_set_color(hwc2_compat_layer_t* layer,
                                     hwc_color_t color)
 {
-#if ANDROID_VERSION_MAJOR >= 13
-    hal::Error error = layer->self->setColor({
-        color.r / 255.0f,
-        color.g / 255.0f,
-        color.b / 255.0f,
-        color.a / 255.0f,
-    });
-#else
-    hal::Error error = layer->self->setColor({
-        color.r, color.g, color.b, color.a});
-#endif
+    HWC2::Error error = layer->self->setColor(color);
     return static_cast<hwc2_error_t>(error);
 }
 
 hwc2_error_t hwc2_compat_layer_set_composition_type(hwc2_compat_layer_t* layer,
                                             int type)
 {
-    hal::Error error = layer->self->setCompositionType(
-        static_cast<hal::Composition>(type));
+    HWC2::Error error = layer->self->setCompositionType(
+        static_cast<HWC2::Composition>(type));
     return static_cast<hwc2_error_t>(error);
 }
 
 hwc2_error_t hwc2_compat_layer_set_dataspace(hwc2_compat_layer_t* layer,
                                         android_dataspace_t dataspace)
 {
-    hal::Error error = layer->self->setDataspace(
-        static_cast<hal::Dataspace>(dataspace));
+    HWC2::Error error = layer->self->setDataspace(dataspace);
     return static_cast<hwc2_error_t>(error);
 }
 
@@ -361,19 +339,19 @@ hwc2_error_t hwc2_compat_layer_set_display_frame(hwc2_compat_layer_t* layer,
 {
     android::Rect r = {left, top, right, bottom};
 
-    hal::Error error = layer->self->setDisplayFrame(r);
+    HWC2::Error error = layer->self->setDisplayFrame(r);
     return static_cast<hwc2_error_t>(error);
 }
 hwc2_error_t hwc2_compat_layer_set_plane_alpha(hwc2_compat_layer_t* layer,
                                         float alpha)
 {
-    hal::Error error = layer->self->setPlaneAlpha(alpha);
+    HWC2::Error error = layer->self->setPlaneAlpha(alpha);
     return static_cast<hwc2_error_t>(error);
 }
 hwc2_error_t hwc2_compat_layer_set_sideband_stream(hwc2_compat_layer_t* layer,
                                             const native_handle_t* stream)
 {
-    hal::Error error = layer->self->setSidebandStream(stream);
+    HWC2::Error error = layer->self->setSidebandStream(stream);
     return static_cast<hwc2_error_t>(error);
 }
 hwc2_error_t hwc2_compat_layer_set_source_crop(hwc2_compat_layer_t* layer,
@@ -382,14 +360,14 @@ hwc2_error_t hwc2_compat_layer_set_source_crop(hwc2_compat_layer_t* layer,
 {
     android::FloatRect r = {left, top, right, bottom};
 
-    hal::Error error = layer->self->setSourceCrop(r);
+    HWC2::Error error = layer->self->setSourceCrop(r);
     return static_cast<hwc2_error_t>(error);
 }
 hwc2_error_t hwc2_compat_layer_set_transform(hwc2_compat_layer_t* layer,
                                         int transform)
 {
-    hal::Error error = layer->self->setTransform(
-        static_cast<Hwc2::Transform>(transform));
+    HWC2::Error error = layer->self->setTransform(
+        static_cast<HWC2::Transform>(transform));
     return static_cast<hwc2_error_t>(error);
 }
 
@@ -399,14 +377,14 @@ hwc2_error_t hwc2_compat_layer_set_visible_region(hwc2_compat_layer_t* layer,
 {
     android::Rect r = {left, top, right, bottom};
 
-    hal::Error error = layer->self->setVisibleRegion(android::Region(r));
+    HWC2::Error error = layer->self->setVisibleRegion(android::Region(r));
     return static_cast<hwc2_error_t>(error);
 }
 
 int32_t hwc2_compat_out_fences_get_fence(hwc2_compat_out_fences_t* fences,
                                          hwc2_compat_layer_t* layer)
 {
-    auto iter = fences->fences.find(layer->self.get());
+    auto iter = fences->fences.find(layer->self);
 
     if(iter != fences->fences.end()) {
         return iter->second->dup();

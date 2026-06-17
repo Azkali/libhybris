@@ -19,9 +19,13 @@ LOCAL_SHARED_LIBRARIES := \
 	libutils \
 	libbinder \
 	libhardware \
-	libhidlbase \
 	liblog \
 	libui
+
+ifeq ($(shell test $(ANDROID_VERSION_MAJOR) -ge 10 && echo true),true)
+LOCAL_SHARED_LIBRARIES += \
+	libhidlbase
+endif
 
 include $(BUILD_SHARED_LIBRARY)
 

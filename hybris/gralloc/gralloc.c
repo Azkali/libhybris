@@ -1,4 +1,23 @@
+/*
+ * Copyright (c) 2018-2022 Jolla Ltd.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
+#ifndef ANDROID_BUILD
 #include <android-config.h>
+#endif
 #include <stdlib.h>
 
 #include <hardware/hardware.h>
@@ -14,7 +33,7 @@
 #include "hybris-gralloc.h"
 #else
 #include <hybris/gralloc/gralloc.h>
-#include <hybris/ui/ui_compatibility_layer.h>
+#include <hybris/ui/ui.h>
 #include <hybris/common/binding.h>
 #endif
 
@@ -72,10 +91,14 @@ static void gralloc1_init(void);
 #if HAS_GRALLOC1_HEADER
 #define GRALLOC0(code) (version == 0) { code }
 #define GRALLOC1(code) (version == 1) { code }
-#define GRALLOC_COMPAT(code) (version == 2) { code }
 #else
 #define GRALLOC0(code) (version == 0) { code }
 #define GRALLOC1(code) (0) {}
+#endif
+
+#if ANDROID_VERSION_MAJOR>=10
+#define GRALLOC_COMPAT(code) (version == 2) { code }
+#else
 #define GRALLOC_COMPAT(code) (0) {}
 #endif
 
@@ -85,13 +108,13 @@ void hybris_gralloc_deinitialize(void);
 
 void hybris_gralloc_initialize(int framebuffer)
 {
-#if ANDROID_VERSION_MAJOR>=10
-    hybris_ui_initialize();
-    if (hybris_ui_check_for_symbol("graphic_buffer_allocator_allocate")) {
-        version = 2;
-    } else
-#endif
     if (version == -1) {
+#if ANDROID_VERSION_MAJOR>=10
+        hybris_ui_initialize();
+        if (hybris_ui_check_for_symbol("graphic_buffer_allocator_allocate")) {
+            version = 2;
+        } else
+#endif
         if (hw_get_module(GRALLOC_HARDWARE_MODULE_ID, (const struct hw_module_t **)&gralloc_hardware_module) == 0) {
 #if HAS_GRALLOC1_HEADER
             uint8_t majorVersion = (gralloc_hardware_module->module_api_version >> 8) & 0xFF;
@@ -256,8 +279,15 @@ int hybris_gralloc_import_buffer(buffer_handle_t raw_handle, buffer_handle_t* ou
     if GRALLOC_COMPAT(
         ret = graphic_buffer_mapper_import_buffer_no_size(raw_handle, out_handle);
     ) else {
-        ret = hybris_gralloc_retain(raw_handle);
-        *out_handle = raw_handle;
+        // clone input buffer first when using gralloc 1 or 0
+        // to keep same ownership semantics with HIDL HAL
+        buffer_handle_t handle = NULL;
+        handle = native_handle_clone((native_handle_t*)raw_handle);
+        if (!handle)
+            return -ENOSYS;
+
+        ret = hybris_gralloc_retain(handle);
+        *out_handle = handle;
     }
 
     return ret;
@@ -317,16 +347,16 @@ int hybris_gralloc_lock(buffer_handle_t handle, int usage, int l, int t, int w, 
     int ret = -ENOSYS;
 
     if GRALLOC_COMPAT(
-        gralloc1_rect_t access_region;
+        ARect bounds;
         int32_t outBytesPerPixel;
         int32_t outBytesPerStride;
 
-        access_region.left = l;
-        access_region.top = t;
-        access_region.width = w;
-        access_region.height = h;
+        bounds.left = l;
+        bounds.top = t;
+        bounds.right = l + w;
+        bounds.bottom = t + h;
 
-        ret = graphic_buffer_mapper_lock(handle, usage, &access_region,
+        ret = graphic_buffer_mapper_lock(handle, usage, &bounds,
                                          vaddr, &outBytesPerPixel, &outBytesPerStride);
     ) else if GRALLOC1(
         uint64_t producer_usage;

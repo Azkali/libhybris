@@ -4,6 +4,7 @@ vulkanplatform_wayland_la_SOURCES = vulkanplatform_wayland.cpp wayland_window.cp
 vulkanplatform_wayland_la_CXXFLAGS = \
 	-I$(top_srcdir)/common \
 	-I$(top_srcdir)/platforms/common \
+	-I$(top_srcdir)/platforms/wayland \
 	-I$(top_srcdir)/include \
 	-I$(top_srcdir)/vulkan \
 	-I$(top_srcdir)/vulkan/platforms/common \
@@ -30,6 +31,7 @@ endif
 
 vulkanplatform_wayland_la_LDFLAGS = \
 	-avoid-version -module -shared -export-dynamic \
+	$(top_builddir)/platforms/common/libhybris-platformcommon.la \
 	$(top_builddir)/vulkan/platforms/common/libhybris-vulkanplatformcommon.la \
 	$(top_builddir)/gralloc/libgralloc.la \
 	$(WAYLAND_CLIENT_LIBS) \

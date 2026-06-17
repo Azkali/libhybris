@@ -70,6 +70,7 @@
 #include "linker_tls.h"
 #include "linker_utils.h"
 
+#include "private/bionic_call_ifunc_resolver.h"
 #include "private/bionic_globals.h"
 #include "android-base/macros.h"
 //#include "android-base/strings.h"
@@ -105,6 +106,10 @@ static const char* const kLdConfigArchFilePath = "/system/etc/ld.config." ABI_ST
 
 static const char* const kLdConfigFilePath = "/system/etc/ld.config.txt";
 static const char* const kLdConfigVndkLiteFilePath = "/system/etc/ld.config.vndk_lite.txt";
+
+#ifdef HAS_ANDROID_11_0_0
+static const char* const kLdGeneratedConfigFilePath = "/linkerconfig/ld.config.txt";
+#endif
 
 #if defined(__LP64__)
 static const char* const kSystemLibDir        = "/system/lib64";
@@ -2415,8 +2420,6 @@ bool do_dlsym(void* handle,
 
     if ((bind == STB_GLOBAL || bind == STB_WEAK) && sym->st_shndx != 0) {
       if (type == STT_TLS) {
-        fprintf(stderr, "TLS relocations not yet implemented in libhybris");
-        abort();
         // For a TLS symbol, dlsym returns the address of the current thread's
         // copy of the symbol. This function may allocate a DTV and/or storage
         // for the source TLS module. (Allocating a DTV isn't necessary if the
@@ -2636,11 +2639,9 @@ bool link_namespaces_all_libs(android_namespace_t* namespace_from,
 }
 
 ElfW(Addr) call_ifunc_resolver(ElfW(Addr) resolver_addr) {
-  typedef ElfW(Addr) (*ifunc_resolver_t)(void);
-  ifunc_resolver_t ifunc_resolver = reinterpret_cast<ifunc_resolver_t>(resolver_addr);
-  ElfW(Addr) ifunc_addr = ifunc_resolver();
+  ElfW(Addr) ifunc_addr = __bionic_call_ifunc_resolver(resolver_addr);
   TRACE_TYPE(RELO, "Called ifunc_resolver@%p. The result is %p",
-      ifunc_resolver, reinterpret_cast<void*>(ifunc_addr));
+      reinterpret_cast<void *>(resolver_addr), reinterpret_cast<void*>(ifunc_addr));
 
   return ifunc_addr;
 }
@@ -3061,8 +3062,6 @@ bool soinfo::relocate(const VersionTracker& version_tracker, ElfRelIteratorT&& r
         }
 #endif
         if (is_tls_reloc(type)) {
-          fprintf(stderr, "TLS relocations not yet implemented in libhybris");
-          abort();
           if (ELF_ST_TYPE(s->st_info) != STT_TLS) {
             DL_ERR("reference to non-TLS symbol \"%s\" from TLS relocation in \"%s\"",
                    sym_name, get_realpath());
@@ -3174,7 +3173,6 @@ bool soinfo::relocate(const VersionTracker& version_tracker, ElfRelIteratorT&& r
         }
         break;
       case R_GENERIC_TLS_TPREL:
-#ifdef DISABLED_FOR_HYBRIS_SUPPORT
         count_relocation(kRelocRelative);
         MARK(rel->r_offset);
         {
@@ -3199,17 +3197,12 @@ bool soinfo::relocate(const VersionTracker& version_tracker, ElfRelIteratorT&& r
                      reinterpret_cast<void*>(tpoff), sym_name);
           *reinterpret_cast<ElfW(Addr)*>(reloc) = tpoff;
         }
-#else
-        fprintf(stderr, "TLS relocations not yet implemented in libhybris");
-        abort();
-#endif
         break;
 
 #if !defined(__aarch64__)
       // Omit support for DTPMOD/DTPREL on arm64, at least until
       // http://b/123385182 is fixed. arm64 uses TLSDESC instead.
       case R_GENERIC_TLS_DTPMOD:
-#ifdef DISABLED_FOR_HYBRIS_SUPPORT
         count_relocation(kRelocRelative);
         MARK(rel->r_offset);
         {
@@ -3232,10 +3225,6 @@ bool soinfo::relocate(const VersionTracker& version_tracker, ElfRelIteratorT&& r
                    reinterpret_cast<void*>(reloc),
                    reinterpret_cast<void*>(sym_addr + addend), sym_name);
         *reinterpret_cast<ElfW(Addr)*>(reloc) = sym_addr + addend;
-#else
-        fprintf(stderr, "TLS relocations not yet implemented in libhybris");
-        abort();
-#endif
         break;
 #endif  // !defined(__aarch64__)
 
@@ -3243,7 +3232,6 @@ bool soinfo::relocate(const VersionTracker& version_tracker, ElfRelIteratorT&& r
       // Bionic currently only implements TLSDESC for arm64. This implementation should work with
       // other architectures, as long as the resolver functions are implemented.
       case R_GENERIC_TLSDESC:
-#ifdef DISABLED_FOR_HYBRIS_SUPPORT
         count_relocation(kRelocRelative);
         MARK(rel->r_offset);
         {
@@ -3265,11 +3253,11 @@ bool soinfo::relocate(const VersionTracker& version_tracker, ElfRelIteratorT&& r
                          reinterpret_cast<void*>(reloc), mod.static_offset, tls_tp_base,
                          static_cast<size_t>(sym_addr), static_cast<size_t>(addend), sym_name);
             } else {
-              tlsdesc_args_.push_back({
-                .generation = mod.first_generation,
-                .index.module_id = module_id,
-                .index.offset = sym_addr + addend,
-              });
+              TlsDynamicResolverArg arg;
+              arg.generation = mod.first_generation;
+              arg.index.module_id = module_id;
+              arg.index.offset = sym_addr + addend;
+              tlsdesc_args_.push_back(arg);
               // Defer the TLSDESC relocation until the address of the TlsDynamicResolverArg object
               // is finalized.
               deferred_tlsdesc_relocs.push_back({ desc, tlsdesc_args_.size() - 1 });
@@ -3280,10 +3268,6 @@ bool soinfo::relocate(const VersionTracker& version_tracker, ElfRelIteratorT&& r
             }
           }
         }
-#else
-        fprintf(stderr, "TLS relocations not yet implemented in libhybris");
-        abort();
-#endif
         break;
 #endif  // defined(__aarch64__)
 
@@ -3465,7 +3449,6 @@ bool soinfo::relocate(const VersionTracker& version_tracker, ElfRelIteratorT&& r
     desc->arg = reinterpret_cast<size_t>(&tlsdesc_args_[pair.second]);
   }
 #endif
-
   return true;
 }
 #endif  // !defined(__mips__)
@@ -3501,7 +3484,7 @@ bool soinfo::prelink_image() {
                                   &ARM_exidx, &ARM_exidx_count);
 #endif
 
-  /*TlsSegment tls_segment;
+  TlsSegment tls_segment;
   if (__bionic_get_tls_segment(phdr, phnum, load_bias, &tls_segment)) {
     if (!__bionic_check_tls_alignment(&tls_segment.alignment)) {
       if (!relocating_linker) {
@@ -3510,9 +3493,9 @@ bool soinfo::prelink_image() {
       }
       return false;
     }
-    tls_ = std::make_unique<soinfo_tls>();
+    tls_ = std::unique_ptr<soinfo_tls>(new soinfo_tls());
     tls_->segment = tls_segment;
-  }*/
+  }
 
   // Extract useful information from dynamic section.
   // Note that: "Except for the DT_NULL element at the end of the array,
@@ -3722,14 +3705,17 @@ bool soinfo::prelink_image() {
 
 #endif
       case DT_RELR:
+      case DT_ANDROID_RELR:
         relr_ = reinterpret_cast<ElfW(Relr)*>(load_bias + d->d_un.d_ptr);
         break;
 
       case DT_RELRSZ:
+      case DT_ANDROID_RELRSZ:
         relr_count_ = d->d_un.d_val / sizeof(ElfW(Relr));
         break;
 
       case DT_RELRENT:
+      case DT_ANDROID_RELRENT:
         if (d->d_un.d_val != sizeof(ElfW(Relr))) {
           DL_ERR("invalid DT_RELRENT: %zd", static_cast<size_t>(d->d_un.d_val));
           return false;
@@ -3737,7 +3723,7 @@ bool soinfo::prelink_image() {
         break;
 
       // Ignored (see DT_RELCOUNT comments for details).
-      case DT_RELRCOUNT:
+      case DT_ANDROID_RELRCOUNT:
         break;
 
       case DT_INIT:
@@ -3884,6 +3870,14 @@ bool soinfo::prelink_image() {
         // These DT entries are used for lazy TLSDESC relocations. Bionic
         // resolves everything eagerly, so these can be ignored.
         break;
+
+#if defined(__aarch64__)
+      case DT_AARCH64_BTI_PLT:
+      case DT_AARCH64_PAC_PLT:
+      case DT_AARCH64_VARIANT_PCS:
+        // Ignored: AArch64 processor-specific dynamic array tags.
+        break;
+#endif
 
       default:
         if (!relocating_linker) {
@@ -4208,6 +4202,16 @@ static std::string get_ld_config_file_path(const char* executable_path) {
     return path;
   }
 
+#ifdef HAS_ANDROID_11_0_0
+  if (file_exists(kLdGeneratedConfigFilePath)) {
+    return kLdGeneratedConfigFilePath;
+  } else {
+    // TODO(b/146386369) : Adjust log level and add more condition to log only when necessary
+    INFO("Warning: failed to find generated linker configuration from \"%s\"",
+         kLdGeneratedConfigFilePath);
+  }
+#endif
+
   path = get_ld_config_file_vndk_path();
   if (file_exists(path.c_str())) {
     return path;
@@ -4317,9 +4321,10 @@ std::vector<android_namespace_t*> init_default_namespaces(const char* executable
   for (auto it : namespaces) {
 // hybris we have no libdl soinfo
   //  it.second->add_soinfo(ld_android_so);
-    if (vdso != nullptr) {
-      it.second->add_soinfo(vdso);
-    }
+// hybris adding vdso without the previous command causes a crash
+  //  if (vdso != nullptr) {
+  //    it.second->add_soinfo(vdso);
+  //  }
     // somain and ld_preloads are added to these namespaces after LD_PRELOAD libs are linked
   }
 

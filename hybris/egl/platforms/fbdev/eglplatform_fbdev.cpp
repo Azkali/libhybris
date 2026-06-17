@@ -1,3 +1,20 @@
+/*
+ * Copyright (c) 2013-2022 Jolla Ltd.
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ * http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ *
+ */
+
 #include <android-config.h>
 #include <ws.h>
 #include "fbdev_window.h"
@@ -34,7 +51,7 @@ extern "C" _EGLDisplay *fbdevws_GetDisplay(EGLNativeDisplayType display)
 	return dpy;
 }
 
-extern "C" void fbdevws_Terminate(_EGLDisplay *dpy)
+extern "C" void fbdevws_releaseDisplay(_EGLDisplay *dpy)
 {
 	delete dpy;
 }
@@ -77,7 +94,7 @@ extern "C" void fbdevws_setSwapInterval(EGLDisplay dpy, EGLNativeWindowType win,
 struct ws_module ws_module_info = {
 	fbdevws_init_module,
 	fbdevws_GetDisplay,
-	fbdevws_Terminate,
+	NULL,
 	fbdevws_CreateWindow,
 	fbdevws_DestroyWindow,
 	fbdevws_eglGetProcAddress,
@@ -86,6 +103,7 @@ struct ws_module ws_module_info = {
 	NULL,
 	NULL,
 	fbdevws_setSwapInterval,
+	fbdevws_releaseDisplay,
 };
 
 // vim:ts=4:sw=4:noexpandtab

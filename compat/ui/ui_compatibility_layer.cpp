@@ -17,7 +17,9 @@
 #include <fcntl.h>
 #include <sys/stat.h>
 
+#if ANDROID_VERSION_MAJOR>=10
 #include <ui/Gralloc.h>
+#endif
 #include <ui/GraphicBuffer.h>
 #include <ui/GraphicBufferMapper.h>
 #include <ui/GraphicBufferAllocator.h>
@@ -68,9 +70,11 @@ struct graphic_buffer* graphic_buffer_new_existing(uint32_t w, uint32_t h,
         return NULL;
 
 #if ANDROID_VERSION_MAJOR>=8
-    buffer->self = new android::GraphicBuffer(w, h, format, 1, usage, stride, (native_handle_t*) handle, keepOwnership);
+    buffer->self = new android::GraphicBuffer(w, h, format, 1/* layerCount */, usage, stride,
+                                              (native_handle_t*) handle, keepOwnership);
 #else
-    buffer->self = new android::GraphicBuffer(w, h, format, usage, stride, (native_handle_t*) handle, keepOwnership);
+    buffer->self = new android::GraphicBuffer(w, h, format, usage, stride,
+                                              (native_handle_t*) handle, keepOwnership);
 #endif
 
     return buffer;
@@ -114,7 +118,7 @@ uint32_t graphic_buffer_reallocate(struct graphic_buffer *buffer, uint32_t w,
                                    uint32_t h, int32_t f, uint32_t usage)
 {
 #if ANDROID_VERSION_MAJOR>=8
-    return buffer->self->reallocate(w, h, f, 1, usage);
+    return buffer->self->reallocate(w, h, f, 1/* layerCount */, usage);
 #else
     return buffer->self->reallocate(w, h, f, usage);
 #endif
@@ -152,6 +156,7 @@ int graphic_buffer_init_check(struct graphic_buffer *buffer)
     return buffer->self->initCheck();
 }
 
+#if ANDROID_VERSION_MAJOR>=10
 using android::GraphicBufferAllocator;
 using android::GraphicBufferMapper;
 using android::PixelFormat;
@@ -202,19 +207,17 @@ status_t graphic_buffer_mapper_free_buffer(buffer_handle_t handle) {
     return GraphicBufferMapper::getInstance().freeBuffer(handle);
 }
 
-
 status_t graphic_buffer_mapper_lock(buffer_handle_t handle, uint32_t usage, const ARect* bounds,
-                                   void** vaddr, int32_t* outBytesPerPixel,
-                                   int32_t* outBytesPerStride) {
+                                    void** vaddr, int32_t* outBytesPerPixel,
+                                    int32_t* outBytesPerStride) {
+    if (outBytesPerPixel) *outBytesPerPixel = -1;
+    if (outBytesPerStride) *outBytesPerStride = -1;
     auto rect = android::Rect(bounds->left, bounds->top, bounds->right, bounds->bottom);
-    return GraphicBufferMapper::getInstance().lock(handle, usage, rect, vaddr
-#if ANDROID_VERSION_MAJOR <= 13
-                                                   , outBytesPerPixel, outBytesPerStride
-#endif
-                                                   );
+    return GraphicBufferMapper::getInstance().lock(handle, usage, rect, vaddr);
 }
 
 status_t graphic_buffer_mapper_unlock(buffer_handle_t handle)
 {
     return GraphicBufferMapper::getInstance().unlock(handle);
 }
+#endif // ANDROID_VERSION_MAJOR>=10

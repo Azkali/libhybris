@@ -58,9 +58,39 @@
 
 #define REPORT_FUNCTION() ALOGV("%s \n", __PRETTY_FUNCTION__)
 
-#if ANDROID_VERSION_MAJOR<12
+#if ANDROID_VERSION_MAJOR < 15
 using android::CompileTimeAssert; // So COMPILE_TIME_ASSERT works
 #endif
+
+#if ANDROID_VERSION_MAJOR >= 15
+#include <android/content/AttributionSourceState.h>
+
+static android::content::AttributionSourceState hybris_camera_attribution_source()
+{
+	android::content::AttributionSourceState attribution_source;
+	attribution_source.uid = android::Camera::USE_CALLING_UID;
+	attribution_source.pid = android::Camera::USE_CALLING_PID;
+	return attribution_source;
+}
+#endif
+
+static int hybris_camera_get_number_of_cameras()
+{
+#if ANDROID_VERSION_MAJOR >= 15
+	return android::Camera::getNumberOfCameras(hybris_camera_attribution_source(), 0);
+#else
+	return android::Camera::getNumberOfCameras();
+#endif
+}
+
+static android::status_t hybris_camera_get_camera_info(int camera_id, android::CameraInfo *ci)
+{
+#if ANDROID_VERSION_MAJOR >= 15
+	return android::Camera::getCameraInfo(camera_id, 0, hybris_camera_attribution_source(), 0, ci);
+#else
+	return android::Camera::getCameraInfo(camera_id, ci);
+#endif
+}
 
 // From android::GLConsumer::FrameAvailableListener
 #if ANDROID_VERSION_MAJOR==5 && ANDROID_VERSION_MINOR>=1 || ANDROID_VERSION_MAJOR>=6
@@ -213,7 +243,7 @@ static void setParameters_resilient(CameraControl* control)
 int android_camera_get_number_of_devices()
 {
 	REPORT_FUNCTION();
-	return android::Camera::getNumberOfCameras();
+	return hybris_camera_get_number_of_cameras();
 }
 
 int android_camera_get_device_info(int32_t camera_id, int* facing, int* orientation)
@@ -228,11 +258,7 @@ int android_camera_get_device_info(int32_t camera_id, int* facing, int* orientat
 
 	android::CameraInfo ci;
 
-	int rv = android::Camera::getCameraInfo(camera_id 
-#if ANDROID_VERSION_MAJOR>=13
-						, false
-#endif
-						, &ci);
+	int rv = hybris_camera_get_camera_info(camera_id, &ci);
 	if (rv != android::OK)
 		return rv;
 
@@ -246,15 +272,11 @@ CameraControl* android_camera_connect_to(CameraType camera_type, CameraControlLi
 {
 	REPORT_FUNCTION();
 
-	const int32_t camera_count = android::Camera::getNumberOfCameras();
+	const int32_t camera_count = hybris_camera_get_number_of_cameras();
 
 	for (int32_t camera_id = 0; camera_id < camera_count; camera_id++) {
 		android::CameraInfo ci;
-		android::Camera::getCameraInfo(camera_id
-#if ANDROID_VERSION_MAJOR>=13
-						, false
-#endif
-						, &ci);
+		hybris_camera_get_camera_info(camera_id, &ci);
 
 		if (ci.facing != camera_type)
 			continue;
@@ -267,25 +289,14 @@ CameraControl* android_camera_connect_to(CameraType camera_type, CameraControlLi
 
 CameraControl* android_camera_connect_by_id(int32_t camera_id, struct CameraControlListener* listener)
 {
-	if (camera_id < 0 || camera_id >= android::Camera::getNumberOfCameras())
+	if (camera_id < 0 || camera_id >= hybris_camera_get_number_of_cameras())
 		return NULL;
 
 	android::sp<CameraControl> cc = new CameraControl();
 	cc->listener = listener;
-#if ANDROID_VERSION_MAJOR>=12
-	cc->camera = android::Camera::connect(camera_id,
-#if ANDROID_VERSION_MAJOR>=14
-					      "hybris",
-#else
-					      android::String16("hybris"),
-#endif
-					      android::Camera::USE_CALLING_UID, android::Camera::USE_CALLING_PID,
-					      /* targetSdkVersion */__ANDROID_API_FUTURE__
-#if ANDROID_VERSION_MAJOR>=13
-					      , false, false
-#endif
-					      );
-#elif ANDROID_VERSION_MAJOR>=7
+#if  ANDROID_VERSION_MAJOR>=15
+	cc->camera = android::Camera::connect(camera_id, __ANDROID_API_FUTURE__, 0, false, hybris_camera_attribution_source(), 0);
+#elif  ANDROID_VERSION_MAJOR>=7
 	cc->camera = android::Camera::connect(camera_id, android::String16("hybris"), android::Camera::USE_CALLING_UID, android::Camera::USE_CALLING_PID);
 #elif ANDROID_VERSION_MAJOR==4 && ANDROID_VERSION_MINOR>=3 || ANDROID_VERSION_MAJOR>=5
 	cc->camera = android::Camera::connect(camera_id, android::String16("hybris"), android::Camera::USE_CALLING_UID);

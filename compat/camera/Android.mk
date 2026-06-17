@@ -33,8 +33,8 @@ LOCAL_C_INCLUDES := \
 
 ifeq ($(IS_ANDROID_8),true)
 LOCAL_CFLAGS += \
-    -Wno-unused-parameter \
-    -Wno-unused-variable
+	-Wno-unused-parameter \
+	-Wno-unused-variable
 endif
 
 LOCAL_SHARED_LIBRARIES := \
@@ -46,6 +46,10 @@ LOCAL_SHARED_LIBRARIES := \
 	libhardware \
 	libui \
 	libgui
+
+ifeq ($(shell test $(ANDROID_VERSION_MAJOR) -ge 15 && echo true),true)
+LOCAL_SHARED_LIBRARIES += libpermission
+endif
 
 ifeq ($(HYBRIS_MEDIA_32_BIT_ONLY),true)
 LOCAL_32_BIT_ONLY := true
@@ -89,6 +93,10 @@ LOCAL_SHARED_LIBRARIES := \
 	libgui \
 	libEGL \
 	libGLESv2
+
+ifeq ($(shell test $(ANDROID_VERSION_MAJOR) -ge 15 && echo true),true)
+LOCAL_SHARED_LIBRARIES += libpermission
+endif
 
 ifeq ($(HYBRIS_MEDIA_32_BIT_ONLY),true)
 LOCAL_32_BIT_ONLY := true

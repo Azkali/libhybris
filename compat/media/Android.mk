@@ -9,7 +9,7 @@ endif
 endif
 
 ifeq ($(HYBRIS_MEDIA_32_BIT_ONLY),)
-    HYBRIS_MEDIA_32_BIT_ONLY := $(shell cat frameworks/av/media/libmediaplayerservice/Android.bp | grep compile_multilib | grep -o "32" | sed "s/32/true/")
+HYBRIS_MEDIA_32_BIT_ONLY := $(shell cat frameworks/av/media/libmediaplayerservice/Android.bp | grep compile_multilib | grep -o "32" | sed "s/32/true/")
 endif
 
 ifeq ($(HYBRIS_MEDIA_32_BIT_ONLY),true)
@@ -20,7 +20,7 @@ include $(CLEAR_VARS)
 include $(LOCAL_PATH)/../Android.common.mk
 
 ifeq ($(CAMERA_SERVICE_WANT_UBUNTU_HEADERS),1)
-    LOCAL_CPPFLAGS += -DWANT_UBUNTU_CAMERA_HEADERS
+	LOCAL_CPPFLAGS += -DWANT_UBUNTU_CAMERA_HEADERS
 endif
 
 LOCAL_SRC_FILES := \
@@ -47,9 +47,9 @@ LOCAL_SHARED_LIBRARIES += \
 endif
 
 LOCAL_C_INCLUDES := \
-    frameworks/av/media/libmediaplayerservice \
-    frameworks/av/services/medialog \
-    frameworks/av/services/camera/libcameraservice
+	frameworks/av/media/libmediaplayerservice \
+	frameworks/av/services/medialog \
+	frameworks/av/services/camera/libcameraservice
 
 IS_ANDROID_5 := $(shell test $(ANDROID_VERSION_MAJOR) -ge 5 && echo true)
 IS_ANDROID_8 := $(shell test $(ANDROID_VERSION_MAJOR) -ge 8 && echo true)
@@ -108,7 +108,7 @@ include $(LOCAL_PATH)/../Android.common.mk
 HYBRIS_PATH := $(LOCAL_PATH)/../../hybris
 
 ifneq ($(IS_ANDROID_8),true)
-    LOCAL_CFLAGS += -std=gnu++0x
+	LOCAL_CFLAGS += -std=gnu++0x
 endif
 
 ifeq ($(BOARD_HAS_MEDIA_RECORDER_PAUSE),true)
@@ -120,10 +120,10 @@ endif
 
 ifeq ($(IS_ANDROID_8),true)
 LOCAL_CFLAGS += \
-    -Wno-unused-parameter \
-    -Wno-multichar \
-    -Wno-unused-variable \
-    -Wno-unused-private-field
+	-Wno-unused-parameter \
+	-Wno-multichar \
+	-Wno-unused-variable \
+	-Wno-unused-private-field
 endif
 
 LOCAL_SRC_FILES:= \
